@@ -8,6 +8,7 @@
     <script src="https://unpkg.com/lucide@1.8.0/dist/umd/lucide.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
     <script src="game-core.js"></script>
+    <script src="tutorial.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700;800;900&family=Noto+Serif+SC:wght@400;500;600;700&display=swap" rel="stylesheet" onerror="this.onerror=null; this.remove();">
@@ -172,6 +173,8 @@
         .home-card {
             width: 100%;
             max-width: 560px;
+            max-height: 92vh;
+            overflow-y: auto;
             background: linear-gradient(145deg, rgba(255, 255, 255, 0.98) 0%, rgba(248, 250, 252, 0.98) 100%);
             border-radius: var(--radius-24);
             padding: var(--spacer-40) var(--spacer-32);
@@ -181,7 +184,6 @@
                 inset 0 1px 0 rgba(255, 255, 255, 0.8);
             border: 1px solid rgba(212, 175, 55, 0.2);
             position: relative;
-            overflow: hidden;
         }
         .home-card::before {
             content: '';
@@ -390,6 +392,9 @@
         }
         .mode-card-home.multi-mode:hover::before {
             background: linear-gradient(180deg, var(--gold-light), var(--gold-dark));
+        }
+        .mode-card-home.guide-mode:hover::before {
+            background: linear-gradient(180deg, #3182ce, #2c5282);
         }
         .mode-icon-home {
             width: 52px;
@@ -609,6 +614,11 @@
             padding-top: var(--spacer-16);
             border-top: 1px solid rgba(212, 175, 55, 0.1);
             margin-top: var(--spacer-8);
+        }
+        .home-guide-btns {
+            display: flex;
+            gap: var(--spacer-8);
+            flex-shrink: 0;
         }
 
         /* 用户设置区域样式 */
@@ -4685,6 +4695,372 @@
                 font-size: 20px;
             }
         }
+
+        /* ========== 新手引导系统样式 ========== */
+        .guide-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 10000;
+            pointer-events: none;
+            transition: opacity 300ms ease;
+        }
+        .guide-overlay.active {
+            pointer-events: auto;
+        }
+        /* demo 模式：遮罩不拦截点击，让模拟界面可交互 */
+        .guide-overlay.demo-mode {
+            pointer-events: none !important;
+        }
+        .guide-overlay.demo-mode .guide-tooltip {
+            pointer-events: auto;
+        }
+        .guide-overlay::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.6);
+            opacity: 0;
+            transition: opacity 300ms ease;
+        }
+        .guide-overlay.active::before {
+            opacity: 1;
+        }
+
+        .guide-highlight {
+            position: absolute;
+            border-radius: 12px;
+            box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.6);
+            border: 3px solid var(--gold-primary, #d4af37);
+            transition: all 300ms cubic-bezier(0.4, 0, 0.2, 1);
+            z-index: 10001;
+            pointer-events: none;
+        }
+
+        .guide-tooltip {
+            position: absolute;
+            background: #fff;
+            border-radius: 12px;
+            padding: 16px 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            z-index: 10002;
+            max-width: 360px;
+            opacity: 0;
+            transform: translateY(8px);
+            transition: opacity 250ms ease, transform 250ms ease;
+        }
+        .guide-tooltip.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        .guide-tooltip-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        .guide-tooltip-header h3 {
+            font-size: 16px;
+            font-weight: 700;
+            color: #1a365d;
+            margin: 0;
+        }
+        .guide-skip-btn {
+            background: none;
+            border: none;
+            color: #999;
+            font-size: 12px;
+            cursor: pointer;
+            padding: 4px 8px;
+            border-radius: 4px;
+        }
+        .guide-skip-btn:hover {
+            background: #f0f0f0;
+            color: #666;
+        }
+        .guide-tooltip p {
+            font-size: 14px;
+            color: #4a5568;
+            line-height: 1.5;
+            margin: 0 0 12px 0;
+        }
+        .tooltip-action-hint {
+            font-size: 12px;
+            color: #d4af37;
+            font-weight: 500;
+            margin-bottom: 12px;
+            opacity: 0;
+            transition: opacity 200ms ease;
+        }
+        .tooltip-action-hint.visible {
+            opacity: 1;
+        }
+        .guide-tooltip-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+        }
+        .guide-steps-nav {
+            display: flex;
+            gap: 4px;
+            flex-wrap: wrap;
+        }
+        .guide-step-btn {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            border: 1px solid #e2e8f0;
+            background: #f7fafc;
+            color: #a0aec0;
+            font-size: 11px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 200ms ease;
+            padding: 0;
+        }
+        .guide-step-btn:hover {
+            border-color: #cbd5e0;
+        }
+        .guide-step-btn.current {
+            background: #d4af37;
+            color: #fff;
+            border-color: #d4af37;
+        }
+        .guide-step-btn.completed {
+            background: #48bb78;
+            color: #fff;
+            border-color: #48bb78;
+        }
+        .guide-next-btn {
+            background: #d4af37;
+            color: #fff;
+            border: none;
+            padding: 8px 20px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: all 200ms ease;
+        }
+        .guide-next-btn:hover {
+            background: #c4a030;
+            transform: translateY(-1px);
+        }
+
+        .guide-arrow {
+            position: absolute;
+            width: 32px;
+            height: 32px;
+            z-index: 10001;
+            pointer-events: none;
+        }
+        .guide-arrow::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 0;
+            height: 0;
+            border: 16px solid transparent;
+        }
+        .guide-arrow.top::before { border-bottom-color: #d4af37; border-top: 0; }
+        .guide-arrow.bottom::before { border-top-color: #d4af37; border-bottom: 0; }
+        .guide-arrow.left::before { border-right-color: #d4af37; border-left: 0; }
+        .guide-arrow.right::before { border-left-color: #d4af37; border-right: 0; }
+        .guide-arrow.top-left::before,
+        .guide-arrow.top-right::before { border-bottom-color: #d4af37; border-top: 0; }
+        .guide-arrow.bottom-left::before,
+        .guide-arrow.bottom-right::before { border-top-color: #d4af37; border-bottom: 0; }
+        .guide-arrow.left-top::before,
+        .guide-arrow.left-bottom::before { border-right-color: #d4af37; border-left: 0; }
+        .guide-arrow.right-top::before,
+        .guide-arrow.right-bottom::before { border-left-color: #d4af37; border-right: 0; }
+
+        /* 引导示例面板 */
+        .guide-example-panel {
+            position: fixed;
+            inset: 0;
+            z-index: 10003;
+            background: rgba(0, 0, 0, 0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+            opacity: 0;
+            transition: opacity 300ms ease;
+        }
+        .guide-example-panel.visible {
+            opacity: 1;
+        }
+        .example-panel-content {
+            background: #fff;
+            border-radius: 16px;
+            max-width: 560px;
+            width: 100%;
+            max-height: 80vh;
+            overflow-y: auto;
+            padding: 24px;
+        }
+        .example-panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+        .example-panel-header h2 {
+            font-size: 18px;
+            font-weight: 700;
+            color: #1a365d;
+            margin: 0;
+        }
+        .example-close-btn {
+            background: #d4af37;
+            color: #fff;
+            border: none;
+            padding: 6px 16px;
+            border-radius: 8px;
+            font-size: 13px;
+            cursor: pointer;
+        }
+        .example-close-btn:hover {
+            background: #c4a030;
+        }
+        .example-panel-tabs {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+        }
+        .example-tab {
+            padding: 6px 16px;
+            border-radius: 8px;
+            border: 1px solid #e2e8f0;
+            background: #f7fafc;
+            color: #4a5568;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 200ms ease;
+        }
+        .example-tab.active {
+            background: #d4af37;
+            color: #fff;
+            border-color: #d4af37;
+        }
+        .example-tab-content {
+            display: none;
+        }
+        .example-tab-content.active {
+            display: block;
+        }
+        .example-item {
+            margin-bottom: 20px;
+            padding: 16px;
+            border-radius: 12px;
+            background: #f7fafc;
+            border: 1px solid #e2e8f0;
+        }
+        .example-item-invalid {
+            background: #fff5f5;
+            border-color: #feb2b2;
+        }
+        .example-item-label {
+            font-size: 14px;
+            font-weight: 600;
+            color: #2d3748;
+            margin-bottom: 8px;
+        }
+        .example-item-invalid .example-item-label {
+            color: #c53030;
+        }
+        .example-item-desc {
+            font-size: 12px;
+            color: #718096;
+            line-height: 1.5;
+            margin-bottom: 12px;
+        }
+        .example-tiles-row {
+            display: flex;
+            gap: 4px;
+            flex-wrap: wrap;
+        }
+        .example-tab-dots {
+            display: flex;
+            gap: 6px;
+            justify-content: center;
+            margin-top: 12px;
+        }
+        .example-tab-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #cbd5e0;
+            cursor: pointer;
+            transition: all 200ms ease;
+        }
+        .example-tab-dot.active {
+            background: #d4af37;
+            width: 24px;
+            border-radius: 4px;
+        }
+
+        /* 迷你卡牌样式（用于引导示例面板，不覆盖游戏卡牌） */
+        .mini-tile {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 36px;
+            height: 48px;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: 700;
+            color: #fff;
+        }
+        .mini-tile.red { background: #e53e3e; }
+        .mini-tile.blue { background: #3182ce; }
+        .mini-tile.black { background: #2d3748; }
+        .mini-tile.yellow { background: #d69e2e; }
+        .mini-tile.joker { background: linear-gradient(135deg, #667eea, #764ba2); font-size: 18px; }
+
+        /* ========== 新手引导模拟游戏界面 ========== */
+        .tutorial-demo-board {
+            position: fixed;
+            inset: 0;
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+            overflow-y: auto;
+            background:
+                radial-gradient(ellipse at 20% 20%, rgba(212, 175, 55, 0.06) 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 80%, rgba(26, 54, 93, 0.6) 0%, transparent 50%),
+                linear-gradient(135deg, var(--home-bg-start) 0%, var(--home-bg-mid) 50%, var(--home-bg-end) 100%);
+        }
+        .tutorial-demo-board::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background-image:
+                repeating-linear-gradient(45deg, transparent, transparent 35px, rgba(212, 175, 55, 0.02) 35px, rgba(212, 175, 55, 0.02) 70px),
+                repeating-linear-gradient(-45deg, transparent, transparent 35px, rgba(212, 175, 55, 0.02) 35px, rgba(212, 175, 55, 0.02) 70px);
+            pointer-events: none;
+            z-index: 0;
+        }
+        .tutorial-demo-board > * {
+            position: relative;
+            z-index: 1;
+        }
+        @media (max-width: 768px) {
+            .tutorial-demo-board .control-btn {
+                min-width: 72px;
+                height: 40px;
+                padding: 0 var(--spacer-4);
+                font-size: var(--body-sm-font-size);
+            }
+            .tutorial-demo-board .game-table { padding: 16px; }
+            .tutorial-demo-board .hand-area { padding: 12px 16px 6px; }
+            .tutorial-demo-board .control-bar { padding: 12px 16px; }
+        }
     </style>
 </head>
 <body>
@@ -4759,13 +5135,19 @@
                 </div>
             </div>
 
-            <!-- 底部导航区：页脚信息 + 指南入口整合 -->
+            <!-- 底部导航区：页脚信息 + 引导入口 -->
             <div class="home-bottom-bar">
                 <span class="home-footer">支持 2-4 人同时游戏</span>
-                <button class="guide-btn" onclick="showGameGuide()">
-                    <i data-lucide="book-open" style="width:16px;height:16px;"></i>
-                    <span>游戏指南</span>
-                </button>
+                <div class="home-guide-btns">
+                    <button class="guide-btn" onclick="startGameGuide()">
+                        <i data-lucide="graduation-cap" style="width:16px;height:16px;"></i>
+                        <span>新手引导</span>
+                    </button>
+                    <button class="guide-btn" onclick="showGameGuide()">
+                        <i data-lucide="book-open" style="width:16px;height:16px;"></i>
+                        <span>游戏指南</span>
+                    </button>
+                </div>
             </div>
         </div>
     </div>
@@ -5934,6 +6316,9 @@
         let socket = null;
         const SOCKET_SERVER_URL = '';
 
+        // 外部 API 服务器地址（GitHub Pages 等纯静态托管环境使用）
+        const EXTERNAL_API_URL = 'https://rummikub-game-dzkgg9ayrl.iga-pages.com';
+
         function saveSession() {
             try {
                 sessionStorage.setItem('rummikub_session', JSON.stringify({
@@ -6749,6 +7134,21 @@
             if (params.has('iga_token')) return true;
             const hostname = window.location.hostname.toLowerCase();
             return hostname.endsWith('.iga-pages.com') || hostname.endsWith('.iga.com') || hostname.endsWith('.iga.cn') || hostname === 'iga.com' || hostname === 'iga.cn';
+        }
+
+        // 检测是否为纯静态托管环境（GitHub Pages 等，需要外部 API）
+        function isStaticHostingEnv() {
+            if (isIgaPreviewEnv()) return true;
+            const hostname = window.location.hostname.toLowerCase();
+            return hostname.endsWith('.github.io');
+        }
+
+        // 获取 API 基础 URL（GitHub Pages 时指向 IGA Pages API）
+        function getApiBaseUrl() {
+            if (isStaticHostingEnv() && !isIgaPreviewEnv()) {
+                return EXTERNAL_API_URL;
+            }
+            return '';
         }
 
         // 安全获取牌堆数量（兼容数组与数字类型）
@@ -9186,5 +9586,103 @@
             });
         });
     </script>
+
+    <!-- 新手引导系统 -->
+    <div id="gameGuideOverlay" class="guide-overlay hidden">
+        <div id="guideHighlight" class="guide-highlight hidden"></div>
+        <div id="guideArrow" class="guide-arrow hidden"></div>
+        <div id="guideTooltip" class="guide-tooltip">
+            <div class="guide-tooltip-header">
+                <h3 id="tooltipTitle"></h3>
+                <button class="guide-skip-btn" onclick="skipGuide()">跳过引导</button>
+            </div>
+            <p id="tooltipText"></p>
+            <div id="tooltipActionHint" class="tooltip-action-hint"></div>
+            <div class="guide-tooltip-footer">
+                <div id="guideStepsNav" class="guide-steps-nav"></div>
+                <button id="guideNextBtn" class="guide-next-btn hidden" onclick="guideAdvanceStep()">
+                    <span id="guideNextBtnText">下一步</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 引导示例面板 -->
+    <div id="guideExamplePanel" class="guide-example-panel hidden">
+        <div class="example-panel-content">
+            <div class="example-panel-header">
+                <h2 id="examplePanelTitle"></h2>
+                <button class="example-close-btn" onclick="closeGuideExample()">完成</button>
+            </div>
+            <div id="examplePanelTabs" class="example-panel-tabs"></div>
+            <div id="examplePanelBody" class="example-panel-body"></div>
+            <div id="exampleTabDots" class="example-tab-dots"></div>
+        </div>
+    </div>
+
+    <!-- 新手引导模拟游戏界面 -->
+    <div id="tutorialDemoBoard" class="tutorial-demo-board hidden">
+        <header class="game-header">
+            <div class="game-header-left">
+                <span class="game-title">拉密 Rummikub</span>
+                <div class="game-players">
+                    <div class="game-player current-turn">
+                        <span class="game-player-name">玩家</span>
+                        <span class="game-player-cards">14</span>
+                    </div>
+                    <div class="game-player bot not-broken">
+                        <span class="game-player-name">Bot</span>
+                        <span class="game-player-cards">14</span>
+                    </div>
+                </div>
+            </div>
+        </header>
+        <div class="deck-info">牌堆剩余: <span>50</span> 张</div>
+        <section class="game-table">
+            <div class="table-area">
+                <span class="table-area-label">桌面牌组</span>
+                <div id="table-groups" class="table-groups"></div>
+            </div>
+            <div class="selected-area-wrapper">
+                <span class="selected-area-label">临时牌组</span>
+                <div class="selected-area">
+                    <span style="color: rgba(255,255,255,0.3); font-size: 13px;">点击桌面牌组可拆分重组</span>
+                </div>
+            </div>
+        </section>
+        <section class="hand-area">
+            <div class="hand-header">
+                <span class="hand-title">你的手牌</span>
+            </div>
+            <div id="hand-cards" class="hand-cards">
+                <div class="game-tile red hand" onclick="demoTileClick(this)"><span>3</span></div>
+                <div class="game-tile red hand" onclick="demoTileClick(this)"><span>4</span></div>
+                <div class="game-tile red hand" onclick="demoTileClick(this)"><span>5</span></div>
+                <div class="game-tile blue hand" onclick="demoTileClick(this)"><span>7</span></div>
+                <div class="game-tile black hand" onclick="demoTileClick(this)"><span>10</span></div>
+                <div class="game-tile black hand" onclick="demoTileClick(this)"><span>11</span></div>
+                <div class="game-tile black hand" onclick="demoTileClick(this)"><span>12</span></div>
+                <div class="game-tile yellow hand" onclick="demoTileClick(this)"><span>8</span></div>
+                <div class="game-tile joker joker-basic hand" onclick="demoTileClick(this)"><span>😄</span></div>
+                <div class="game-tile blue hand" onclick="demoTileClick(this)"><span>7</span></div>
+                <div class="game-tile red hand" onclick="demoTileClick(this)"><span>9</span></div>
+                <div class="game-tile yellow hand" onclick="demoTileClick(this)"><span>10</span></div>
+                <div class="game-tile yellow hand" onclick="demoTileClick(this)"><span>11</span></div>
+                <div class="game-tile black hand" onclick="demoTileClick(this)"><span>6</span></div>
+            </div>
+        </section>
+        <div class="status-bar">
+            <div class="status-message">点击"下一步"继续引导</div>
+        </div>
+        <nav class="control-bar">
+            <div class="control-buttons">
+                <button class="control-btn purple" onclick="demoSortHand()"><i data-lucide="layout-grid" class="icon"></i>理牌</button>
+                <button class="control-btn brand" onclick="demoPlayCard()"><i data-lucide="play" class="icon"></i>出牌</button>
+                <button class="control-btn cyan" id="btn-draw" onclick="demoDrawCard()"><i data-lucide="download" class="icon"></i>摸牌</button>
+                <button class="control-btn secondary" id="btn-pass" onclick="demoPassTurn()" style="display:none;"><i data-lucide="skip-forward" class="icon"></i>过牌</button>
+                <button class="control-btn danger" onclick="demoUndo()"><i data-lucide="rotate-ccw" class="icon"></i>撤销</button>
+            </div>
+        </nav>
+    </div>
 </body>
 </html>

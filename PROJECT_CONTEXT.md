@@ -66,6 +66,18 @@
    - **Socket.IO 服务器** (server/index.js)：实时多人对战，房间管理，状态广播
    - **IGA Pages API** (api/[[default]].js)：无服务器部署，HTTP 轮询模式
 
+### 部署环境差异
+
+| 特性 | Socket.IO 服务器 | IGA Pages / Serverless |
+|-----|-----------------|----------------------|
+| 实时通信 | ✅ WebSocket | ❌ 不支持，需 HTTP 轮询 |
+| 状态存储 | ✅ 内存 Map | ⚠️ 多实例不可靠，需外部数据库 |
+| 多人对战 | ✅ 完整支持 | ⚠️ 受实例隔离限制 |
+| 扩展性 | 需手动扩容 | 自动弹性伸缩 |
+| 部署方式 | PM2 / Docker / ECS | IGA Pages / 扣子编程 |
+
+> **重要**：Serverless 环境（IGA Pages、扣子编程）中，房间状态存储在内存 Map 中，不同请求可能命中不同函数实例，导致跨实例房间数据丢失。多人对战功能需将状态持久化到外部数据库（如 Redis、PostgreSQL）才能正常工作。
+
 ---
 
 ## 2. 已实现 API 列表
@@ -184,6 +196,9 @@
 - [ ] **断网重连恢复**：Socket.IO 断开后重连，游戏状态恢复逻辑不完善
 - [ ] **移动端拖拽体验**：触摸设备上卡牌拖拽操作灵敏度需优化
 - [ ] **牌堆耗尽边界情况**：连续过牌判定逻辑在某些边缘情况下可能提前结束游戏
+- [ ] **Serverless 多人对战不可用**：`api/[[default]].js` 使用内存 Map 存储房间状态，多实例部署时跨实例数据丢失，多人对战功能失效
+- [ ] **Serverless WebSocket 不支持**：IGA Pages / 扣子编程等 Serverless 平台不支持 WebSocket，需依赖 HTTP 轮询，实时性较差
+- [ ] **预览 URL Token 过期**：IGA Pages 预览 URL 的 `iga_token` 为临时凭证，每次重新部署后旧 token 立即失效（返回 410 Gone）
 
 ### 4.3 优化建议
 
@@ -215,14 +230,36 @@ npm run build
 ### 5.2 部署命令
 
 ```bash
-# 部署到 IGA Pages（预览环境）
+# 构建生产版本（复制到 dist 目录）
+npm run build
+
+# 部署到火山引擎 IGA Pages
 iga pages deploy
+iga pages deploy --name rummikub-game
 
 # 查看部署列表
 iga pages list
+
+# 查看项目信息
+iga pages link --format=json
+
+# 查看环境变量
+iga pages env list
 ```
 
-### 5.3 Git 命令
+### 5.3 多人游戏测试命令
+
+```bash
+# 运行多人游戏自动化测试（2人/3人/4人）
+node test-multiplayer.js
+
+# 测试单个 API 接口
+curl -X POST http://localhost:3000/room/create \
+  -H "Content-Type: application/json" \
+  -d '{"playerName":"test","gameMode":"classic"}'
+```
+
+### 5.4 Git 命令
 
 ```bash
 # 查看当前状态
@@ -245,7 +282,7 @@ git remote -v
 git remote set-url origin https://github.com/equeenking/Rummikub
 ```
 
-### 5.4 问题排查命令
+### 5.5 问题排查命令
 
 ```bash
 # 检查 Node.js 版本
@@ -267,7 +304,7 @@ dir /s /b *.js | findstr /v node_modules
 # (使用 VS Code 右下角状态栏查看)
 ```
 
-### 5.5 浏览器调试技巧
+### 5.6 浏览器调试技巧
 
 1. **Console 面板**：
    - 输入 `currentGameState` 查看当前游戏状态
@@ -320,3 +357,132 @@ dir /s /b *.js | findstr /v node_modules
 - 每个临时牌组可放入 1-2 张牌
 - 验证仅在提交时进行
 - 支持从手牌/其他牌组移动卡牌
+
+---
+
+## 7. 部署与环境配置
+
+### 7.1 GitHub 仓库
+
+- **仓库地址**：https://github.com/equeenking/Rummikub
+- **主分支**：main
+- **忽略文件**：`node_modules/`、`dist/`、`*.log`、`.env`、`test-*.js`、`.iga/`
+
+### 7.2 火山引擎 IGA Pages 部署
+
+#### 项目信息
+
+| 项目 | 信息 |
+|-----|------|
+| 项目名称 | rummikub-game |
+| 项目 ID | dzkgg9ayrl |
+| 预览域名格式 | `https://rummikub-game-dzkgg9ayrl-{deploy-id}.preview.iga-pages.com` |
+| 正式域名格式 | `https://rummikub-game-dzkgg9ayrl.iga-pages.com`（需发布到生产环境） |
+
+#### 关键配置
+
+1. **API 路径双重挂载**：`server/index.js` 中同时挂载带 `/api` 前缀和不带前缀的路由，兼容本地和 IGA Pages 环境
+2. **CORS 中间件**：`api/[[default]].js` 中添加 `cors()` 中间件，解决跨域请求问题
+3. **构建脚本**：`build.cjs` 将 `index.html`、`game-core.js`、`tutorial.js`、`api/[[default]].js` 和 `images/` 复制到 `dist/` 目录
+4. **环境检测**：前端通过 `isIgaPreviewEnv()` 检测 IGA 环境，自动切换 API 请求路径前缀
+
+#### 已知问题
+
+- **410 Gone**：预览 URL 的 `iga_token` 是临时凭证，每次重新部署后旧 token 立即失效
+- **Serverless 实例隔离**：内存状态（房间 Map）在多实例间不共享，多人对战功能不可靠
+- **WebSocket 不支持**：IGA Pages 不支持 WebSocket，需使用 HTTP 轮询
+
+### 7.3 扣子编程部署需求
+
+#### 前置要求
+
+- 注册扣子编程账号（https://www.coze.cn/）
+- 项目试运行通过
+- 可选：准备已备案的自定义域名
+
+#### 部署方式
+
+1. **从 GitHub 导入**：支持直接导入 GitHub 仓库
+2. **AI 编程创建**：通过自然语言描述生成项目
+
+#### 关键适配工作
+
+| 适配项 | 说明 | 优先级 |
+|-------|------|--------|
+| 状态持久化 | 将内存 Map 改为数据库存储（支持 MySQL/PostgreSQL） | 高 |
+| API 路径适配 | 确认 `/api/*` 路径在扣子编程环境中可正确访问 | 中 |
+| CORS 配置 | 确保支持扣子编程域名的跨域请求 | 中 |
+| 环境变量 | 将 API 地址、数据库连接等配置为环境变量 | 中 |
+| WebSocket 替代 | 使用 HTTP 轮询或 SSE 替代实时通信 | 中 |
+
+#### 部署流程
+
+1. 左侧导航栏 → 项目管理 → 导入项目（从 GitHub）
+2. 配置数据库集成（如需多人对战）
+3. 修改 API 代码使用数据库存储房间状态
+4. 配置环境变量
+5. 点击部署 → 配置域名 → 开始部署
+
+---
+
+## 8. 多人游戏测试与问题修复记录
+
+### 8.1 测试覆盖
+
+| 测试类型 | 状态 | 说明 |
+|---------|------|------|
+| 2人游戏 | ✅ 通过 | 完整流程测试通过，184回合，正常结束 |
+| 3人游戏 | ⚠️ 限流 | 创建房间时触发服务器限流（100次/分钟） |
+| 4人游戏 | ⚠️ 限流 | 同上，连续测试时触发限流 |
+
+### 8.2 浏览器控制台 4 条错误日志分析与修复
+
+#### 错误 1：JSON 解析错误
+
+```
+SyntaxError: Unexpected token '<', "<!DOCTYPE"... is not valid JSON
+```
+
+- **原因**：前端在火山引擎环境中给 API 路径添加了 `/api` 前缀，但服务器端没有对应路由，返回了 HTML 页面而非 JSON
+- **修复**：在 `server/index.js` 中同时挂载带前缀和不带前缀的路由：
+  ```javascript
+  app.use(apiRouter);
+  app.use('/api', apiRouter);
+  ```
+
+#### 错误 2：请求中止
+
+```
+net::ERR_ABORTED http://localhost:3000/
+```
+
+- **原因**：跨域资源共享（CORS）问题
+- **修复**：在 `api/[[default]].js` 中添加 CORS 中间件：
+  ```javascript
+  app.use(cors());
+  ```
+
+#### 错误 3-4：域名解析失败
+
+```
+net::ERR_NAME_NOT_RESOLVED f00v5hdjnx.iga-pages.com
+```
+
+- **原因**：旧项目域名 DNS 解析失败，项目已迁移到新 ID（dzkgg9ayrl）
+- **说明**：需使用最新的项目地址访问
+
+### 8.3 测试脚本关键修复
+
+1. **出牌失败无限重试**：出牌失败时仍将 `actionTaken` 设为 true，导致玩家卡在出牌阶段
+   - 修复：仅在出牌成功时设置 `actionTaken = true`
+
+2. **请求限流**：测试脚本请求频率过高触发服务器限流
+   - 修复：添加 `delay` 函数控制请求间隔（500ms），摸牌失败时实现重试机制
+
+3. **牌堆为空处理**：牌堆耗尽后玩家应过牌而非继续摸牌
+   - 修复：添加过牌（pass）操作处理
+
+### 8.4 构建脚本修复
+
+- **问题**：`build.cjs` 未打包 `game-core.js` 和 `tutorial.js`，导致 Serverless 函数无法导入游戏核心模块
+- **修复**：在构建脚本中添加这两个文件的复制

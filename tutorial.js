@@ -11,6 +11,8 @@ class GameGuideSystem {
         this.gameState = null;
         this.pollingInterval = null;
         this.exampleShowing = false;
+        this.standaloneMode = false;
+        this.demoMode = false;
 
         this.guideSteps = [
             {
@@ -209,7 +211,7 @@ class GameGuideSystem {
 
     createMiniTile(color, number, isJoker, jokerType) {
         const tile = document.createElement('div');
-        tile.className = 'game-tile';
+        tile.className = 'mini-tile';
         if (isJoker) {
             tile.classList.add('joker');
             const jt = jokerType || 'basic';
@@ -538,9 +540,25 @@ class GameGuideSystem {
 
     startGuide() {
         this.isActive = true;
+
+        // 检测是否在游戏中（#hand-cards 是否在游戏页面）
+        const inGame = document.querySelector('#gamePage:not(.hidden) #hand-cards');
+        if (!inGame) {
+            // 主菜单独立模式：显示模拟游戏界面
+            this.demoMode = true;
+            const demoBoard = document.getElementById('tutorialDemoBoard');
+            if (demoBoard) {
+                demoBoard.classList.remove('hidden');
+                if (typeof lucide !== 'undefined') lucide.createIcons();
+            }
+        }
+
         const overlay = document.getElementById('gameGuideOverlay');
         if (overlay) {
             overlay.classList.remove('hidden');
+            if (this.demoMode) {
+                overlay.classList.add('demo-mode');
+            }
             setTimeout(() => overlay.classList.add('active'), 50);
         }
         this.currentStep = 0;
@@ -620,6 +638,31 @@ class GameGuideSystem {
     }
 
     prepareSplitDemo() {
+        // 演示模式：在模拟界面中填充桌面牌组
+        if (this.demoMode) {
+            const tableGroups = document.querySelector('#tutorialDemoBoard #table-groups');
+            if (tableGroups) {
+                tableGroups.innerHTML = '';
+                const group = document.createElement('div');
+                group.className = 'table-group';
+                [
+                    { color: 'red', number: 5 },
+                    { color: 'red', number: 6 },
+                    { color: 'red', number: 7 },
+                    { color: 'red', number: 8 },
+                    { color: 'red', number: 9 },
+                    { color: 'red', number: 10 }
+                ].forEach(t => {
+                    const tile = document.createElement('div');
+                    tile.className = 'game-tile in-group ' + t.color;
+                    tile.innerHTML = '<span>' + t.number + '</span>';
+                    group.appendChild(tile);
+                });
+                tableGroups.appendChild(group);
+            }
+            return;
+        }
+
         if (typeof currentGameState === 'undefined' || !currentGameState) return;
 
         const currentPlayer = currentGameState.players[currentGameState.currentIndex];
@@ -664,7 +707,13 @@ class GameGuideSystem {
         }
 
         if (step.selector) {
-            const target = document.querySelector(step.selector);
+            let target;
+            if (this.demoMode) {
+                const demoBoard = document.getElementById('tutorialDemoBoard');
+                target = demoBoard ? demoBoard.querySelector(step.selector) : null;
+            } else {
+                target = document.querySelector(step.selector);
+            }
             if (target) {
                 const rect = target.getBoundingClientRect();
                 const vw = window.innerWidth;
@@ -693,11 +742,17 @@ class GameGuideSystem {
                     this.showTooltip(step.title, step.text, target, finalPosition);
                     this.showArrow(target, finalPosition);
                 }
+                this.standaloneMode = this.demoMode;
             } else {
-                setTimeout(() => this.showStep(stepIndex), 300);
+                // 目标元素不存在（主菜单独立模式），降级为中心弹窗
+                this.hideHighlight();
+                this.hideArrow();
+                this.showCenteredTooltip(step.title, step.text);
+                this.standaloneMode = true;
             }
         } else {
             this.showCenteredTooltip(step.title, step.text);
+            this.standaloneMode = false;
         }
 
         this.updateTooltipActions(step);
@@ -719,6 +774,21 @@ class GameGuideSystem {
             'split_table': '请点击桌面牌组中的任意一张牌进行拆分',
             'add_to_split': '请点选手牌后再点击临时牌组'
         };
+
+        // 独立模式：所有交互步骤降级为点击继续
+        if (this.standaloneMode && step.requireAction !== 'example' && step.requireAction !== 'any_click') {
+            nextBtn.classList.remove('hidden');
+            nextBtnText.textContent = '下一步';
+            if (this.demoMode) {
+                // 演示模式：同时显示操作提示，用户可点击模拟元素或直接下一步
+                hintEl.textContent = actionHints[step.requireAction] || '或点击"下一步"继续';
+                hintEl.classList.add('visible');
+            } else {
+                hintEl.classList.remove('visible');
+                hintEl.textContent = '';
+            }
+            return;
+        }
 
         if (step.requireAction === 'any_click') {
             nextBtn.classList.remove('hidden');
@@ -745,6 +815,10 @@ class GameGuideSystem {
             this.nextStep();
         } else if (step.requireAction === 'example') {
             this.showExamplePanel(step.exampleType);
+        } else if (this.standaloneMode) {
+            // 独立模式：允许通过按钮推进
+            this.playSuccessSound();
+            this.nextStep();
         }
     }
 
@@ -762,6 +836,21 @@ class GameGuideSystem {
 
         highlight.classList.remove('hidden');
         highlight.style.opacity = '1';
+    }
+
+    hideHighlight() {
+        const highlight = document.getElementById('guideHighlight');
+        if (highlight) {
+            highlight.classList.add('hidden');
+            highlight.style.opacity = '0';
+        }
+    }
+
+    hideArrow() {
+        const arrow = document.getElementById('guideArrow');
+        if (arrow) {
+            arrow.classList.add('hidden');
+        }
     }
 
     calculateBestPosition(rect, tooltipWidth, tooltipHeight, vw, vh, margin) {
@@ -1102,6 +1191,11 @@ class GameGuideSystem {
     handleUserAction(e, actionType) {
         const target = e.target;
 
+        // demo 模式下，手牌点击由 demoTileClick 处理，避免重复推进
+        if (this.demoMode && (actionType === 'card_click' || actionType === 'multiple_selected')) {
+            return;
+        }
+
         switch (actionType) {
             case 'any_click':
                 this.playSuccessSound();
@@ -1258,7 +1352,17 @@ class GameGuideSystem {
         const overlay = document.getElementById('gameGuideOverlay');
         if (overlay) {
             overlay.classList.remove('active');
+            overlay.classList.remove('demo-mode');
             setTimeout(() => overlay.classList.add('hidden'), 300);
+        }
+
+        // 隐藏模拟游戏界面
+        if (this.demoMode) {
+            const demoBoard = document.getElementById('tutorialDemoBoard');
+            if (demoBoard) {
+                demoBoard.classList.add('hidden');
+            }
+            this.demoMode = false;
         }
 
         if (typeof showToast === 'function') {
@@ -1326,6 +1430,227 @@ function continueGuideAfterExample() {
 function guideAdvanceStep() {
     if (gameGuideSystem) {
         gameGuideSystem.advanceStep();
+    }
+}
+
+// 演示理牌功能
+function demoSortHand() {
+    demoSaveSnapshot();
+    
+    const handCards = document.querySelectorAll('#tutorialDemoBoard .hand-cards .game-tile');
+    const tilesArray = Array.from(handCards);
+    
+    tilesArray.sort((a, b) => {
+        const colorOrder = { red: 0, yellow: 1, blue: 2, black: 3, joker: 4 };
+        const colorA = a.classList.contains('red') ? 'red' :
+                       a.classList.contains('yellow') ? 'yellow' :
+                       a.classList.contains('blue') ? 'blue' :
+                       a.classList.contains('black') ? 'black' : 'joker';
+        const colorB = b.classList.contains('red') ? 'red' :
+                       b.classList.contains('yellow') ? 'yellow' :
+                       b.classList.contains('blue') ? 'blue' :
+                       b.classList.contains('black') ? 'black' : 'joker';
+        
+        if (colorA !== colorB) return colorOrder[colorA] - colorOrder[colorB];
+        
+        const numA = parseInt(a.textContent) || 0;
+        const numB = parseInt(b.textContent) || 0;
+        return numA - numB;
+    });
+    
+    const container = document.querySelector('#tutorialDemoBoard .hand-cards');
+    container.innerHTML = '';
+    tilesArray.forEach(tile => {
+        container.appendChild(tile);
+        tile.onclick = () => demoTileClick(tile);
+    });
+    
+    updateDemoStatus('手牌已按颜色和数字排序');
+    
+    if (gameGuideSystem && gameGuideSystem.isActive && !gameGuideSystem.exampleShowing) {
+        const currentStep = gameGuideSystem.guideSteps[gameGuideSystem.currentStep];
+        if (currentStep && currentStep.requireAction === 'sort_hand') {
+            gameGuideSystem.playSuccessSound();
+            gameGuideSystem.nextStep();
+        }
+    }
+}
+
+// 演示出牌功能
+function demoPlayCard() {
+    const selectedTiles = document.querySelectorAll('#tutorialDemoBoard .game-tile.selected');
+    if (selectedTiles.length === 0) {
+        updateDemoStatus('请先选择要出的牌');
+        return;
+    }
+    
+    demoSaveSnapshot();
+    
+    const selectedArea = document.querySelector('#tutorialDemoBoard .selected-area');
+    selectedTiles.forEach(tile => {
+        tile.classList.remove('selected');
+        tile.classList.remove('hand');
+        tile.classList.add('in-group');
+        selectedArea.appendChild(tile);
+    });
+    
+    updateDemoStatus(`已将 ${selectedTiles.length} 张牌放入临时牌组`);
+    
+    if (gameGuideSystem && gameGuideSystem.isActive && !gameGuideSystem.exampleShowing) {
+        const currentStep = gameGuideSystem.guideSteps[gameGuideSystem.currentStep];
+        if (currentStep && (currentStep.requireAction === 'play_card' || currentStep.requireAction === 'card_click')) {
+            gameGuideSystem.playSuccessSound();
+            gameGuideSystem.nextStep();
+        }
+    }
+}
+
+// 演示摸牌功能
+let demoDeckCount = 50;
+
+function demoDrawCard() {
+    if (demoDeckCount <= 0) {
+        updateDemoStatus('牌堆已空，请出牌或过牌');
+        
+        const btnDraw = document.querySelector('#tutorialDemoBoard #btn-draw');
+        const btnPass = document.querySelector('#tutorialDemoBoard #btn-pass');
+        if (btnDraw) btnDraw.style.display = 'none';
+        if (btnPass) btnPass.style.display = 'inline-flex';
+        
+        return;
+    }
+    
+    demoSaveSnapshot();
+    
+    const colors = ['red', 'yellow', 'blue', 'black'];
+    const color = colors[Math.floor(Math.random() * colors.length)];
+    const number = Math.floor(Math.random() * 13) + 1;
+    
+    const tile = document.createElement('div');
+    tile.className = `game-tile ${color} hand`;
+    tile.innerHTML = `<span>${number}</span>`;
+    tile.onclick = () => demoTileClick(tile);
+    
+    const handArea = document.querySelector('#tutorialDemoBoard .hand-cards');
+    handArea.appendChild(tile);
+    
+    demoDeckCount--;
+    
+    // 更新牌堆计数显示
+    const deckCountSpan = document.querySelector('#tutorialDemoBoard .deck-info span');
+    if (deckCountSpan) deckCountSpan.textContent = demoDeckCount;
+    
+    updateDemoStatus(`摸牌: ${color === 'red' ? '红' : color === 'yellow' ? '黄' : color === 'blue' ? '蓝' : '黑'}${number}`);
+}
+
+// 演示过牌功能
+function demoPassTurn() {
+    updateDemoStatus('你选择了过牌');
+    
+    // 清空选中状态
+    document.querySelectorAll('#tutorialDemoBoard .game-tile.selected').forEach(t => t.classList.remove('selected'));
+    
+    if (gameGuideSystem && gameGuideSystem.isActive && !gameGuideSystem.exampleShowing) {
+        const currentStep = gameGuideSystem.guideSteps[gameGuideSystem.currentStep];
+        if (currentStep && currentStep.requireAction === 'pass_turn') {
+            gameGuideSystem.playSuccessSound();
+            gameGuideSystem.nextStep();
+        }
+    }
+}
+
+// 演示撤销功能（支持多步撤销）
+let demoTurnSnapshots = [];
+
+function demoSaveSnapshot() {
+    const handArea = document.querySelector('#tutorialDemoBoard .hand-cards');
+    const selectedArea = document.querySelector('#tutorialDemoBoard .selected-area');
+    
+    const snapshot = {
+        handHtml: handArea.innerHTML,
+        selectedHtml: selectedArea.innerHTML,
+        selectedCards: []
+    };
+    
+    document.querySelectorAll('#tutorialDemoBoard .game-tile.selected').forEach(t => {
+        snapshot.selectedCards.push(t.textContent);
+    });
+    
+    demoTurnSnapshots.push(snapshot);
+    if (demoTurnSnapshots.length > 10) demoTurnSnapshots.shift();
+}
+
+function demoUndo() {
+    if (demoTurnSnapshots.length > 0) {
+        const snapshot = demoTurnSnapshots.pop();
+        const handArea = document.querySelector('#tutorialDemoBoard .hand-cards');
+        const selectedArea = document.querySelector('#tutorialDemoBoard .selected-area');
+        
+        handArea.innerHTML = snapshot.handHtml;
+        selectedArea.innerHTML = snapshot.selectedHtml;
+        
+        // 重新绑定点击事件
+        document.querySelectorAll('#tutorialDemoBoard .game-tile.hand').forEach(t => {
+            t.onclick = () => demoTileClick(t);
+        });
+        
+        updateDemoStatus('已撤销上一步操作');
+    } else {
+        // 清空所有选择和临时牌组
+        const selectedArea = document.querySelector('#tutorialDemoBoard .selected-area');
+        const tilesInSelected = selectedArea.querySelectorAll('.game-tile');
+        
+        if (tilesInSelected.length > 0) {
+            const handArea = document.querySelector('#tutorialDemoBoard .hand-cards');
+            tilesInSelected.forEach(tile => {
+                tile.classList.remove('in-group');
+                tile.classList.add('hand');
+                handArea.appendChild(tile);
+                tile.onclick = () => demoTileClick(tile);
+            });
+            updateDemoStatus('已撤销本回合操作');
+        } else {
+            updateDemoStatus('没有可撤销的操作');
+        }
+    }
+    
+    // 清除选中状态
+    document.querySelectorAll('#tutorialDemoBoard .game-tile.selected').forEach(t => t.classList.remove('selected'));
+}
+
+// 更新演示状态
+function updateDemoStatus(message) {
+    const statusBar = document.querySelector('#tutorialDemoBoard .status-message');
+    if (statusBar) {
+        statusBar.textContent = message;
+    }
+}
+
+// 模拟界面手牌点击交互
+function demoTileClick(tile) {
+    if (tile.classList.contains('in-group')) return; // 桌面牌组不可点击
+    tile.classList.toggle('selected');
+
+    // 检查是否满足引导步骤的推进条件
+    if (gameGuideSystem && gameGuideSystem.isActive && !gameGuideSystem.exampleShowing) {
+        const currentStep = gameGuideSystem.guideSteps[gameGuideSystem.currentStep];
+        if (!currentStep) return;
+
+        if (currentStep.requireAction === 'card_click') {
+            const selectedTiles = document.querySelectorAll('#tutorialDemoBoard .game-tile.selected');
+            if (selectedTiles.length >= 1) {
+                gameGuideSystem.playSuccessSound();
+                gameGuideSystem.nextStep();
+            }
+        }
+
+        if (currentStep.requireAction === 'multiple_selected') {
+            const selectedTiles = document.querySelectorAll('#tutorialDemoBoard .game-tile.selected');
+            if (selectedTiles.length >= 2) {
+                gameGuideSystem.playSuccessSound();
+                gameGuideSystem.nextStep();
+            }
+        }
     }
 }
 
