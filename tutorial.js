@@ -1465,7 +1465,18 @@ function demoSortHand() {
         tile.onclick = () => demoTileClick(tile);
     });
     
-    updateDemoStatus('手牌已按颜色和数字排序');
+    const validGroups = findValidGroups(tilesArray);
+    
+    if (validGroups.length > 0) {
+        const firstGroup = validGroups[0];
+        firstGroup.forEach(tile => {
+            tile.classList.add('selected');
+        });
+        
+        updateDemoStatus(`已整理手牌，找到 ${validGroups.length} 个有效组合，已自动选中第一个牌组，点击出牌`);
+    } else {
+        updateDemoStatus('已整理手牌，没有符合条件的牌组，请摸牌');
+    }
     
     if (gameGuideSystem && gameGuideSystem.isActive && !gameGuideSystem.exampleShowing) {
         const currentStep = gameGuideSystem.guideSteps[gameGuideSystem.currentStep];
@@ -1474,6 +1485,76 @@ function demoSortHand() {
             gameGuideSystem.nextStep();
         }
     }
+}
+
+// 检测手牌中的有效牌组（顺子和刻子）
+function findValidGroups(tiles) {
+    const groups = [];
+    
+    const colorGroups = {};
+    const numGroups = {};
+    
+    tiles.forEach(tile => {
+        const isJoker = tile.classList.contains('joker');
+        if (isJoker) return;
+        
+        const color = tile.classList.contains('red') ? 'red' :
+                      tile.classList.contains('yellow') ? 'yellow' :
+                      tile.classList.contains('blue') ? 'blue' : 'black';
+        const number = parseInt(tile.textContent) || 0;
+        
+        if (!colorGroups[color]) colorGroups[color] = [];
+        colorGroups[color].push({ tile, number });
+        
+        if (!numGroups[number]) numGroups[number] = [];
+        numGroups[number].push({ tile, color });
+    });
+    
+    // 检测顺子（同色连续数字，3张以上）
+    for (const color in colorGroups) {
+        const sorted = [...colorGroups[color]].sort((a, b) => a.number - b.number);
+        
+        for (let start = 0; start < sorted.length - 2; start++) {
+            for (let end = start + 2; end < sorted.length; end++) {
+                const subGroup = sorted.slice(start, end + 1);
+                let isConsecutive = true;
+                for (let i = 1; i < subGroup.length; i++) {
+                    if (subGroup[i].number !== subGroup[i-1].number + 1) {
+                        isConsecutive = false;
+                        break;
+                    }
+                }
+                if (isConsecutive) {
+                    groups.push(subGroup.map(g => g.tile));
+                }
+            }
+        }
+    }
+    
+    // 检测刻子（同数字不同颜色，3张以上）
+    for (const num in numGroups) {
+        const group = numGroups[num];
+        const uniqueColors = {};
+        group.forEach(g => {
+            if (!uniqueColors[g.color]) {
+                uniqueColors[g.color] = g.tile;
+            }
+        });
+        
+        const uniqueTiles = Object.values(uniqueColors);
+        if (uniqueTiles.length >= 3) {
+            groups.push(uniqueTiles);
+        }
+    }
+    
+    // 去重并按长度排序
+    const seen = new Set();
+    return groups.filter(group => {
+        const key = group.map(t => t.textContent).sort().join(',');
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+    }).sort((a, b) => b.length - a.length);
 }
 
 // 演示出牌功能
